@@ -4,7 +4,7 @@
 #include <QLabel>
 #include <QComboBox>
 #include "PeerLoginDialog.h"
-#include "MiniZip/ZipUtils.h"
+#include "ZipUtils.h"
 #include <QTextStream>
 #include <QDebug>
 #include <QStandardPaths>
@@ -16,15 +16,20 @@
 #include <QStatusBar>
 #include <QMainWindow>
 #include <QThread>
+#include "ASCE710Target.h"
+#include "UserSpectrumWidget.h"
+#include "USGSTargetWidget.h"
+#include "NSHMPTarget.h"
+#include <GoogleAnalytics.h>
 
-PEER_NGA_Records::PEER_NGA_Records(QWidget *parent) : SimCenterAppWidget(parent), groundMotionsFolder(QDir::tempPath())
+PEER_NGA_Records::PEER_NGA_Records(GeneralInformationWidget* generalInfoWidget, QWidget *parent) : SimCenterAppWidget(parent), groundMotionsFolder(QDir::tempPath())
 {
-    setupUI();
+    setupUI(generalInfoWidget);
 
     setupConnections();
 }
 
-void PEER_NGA_Records::setupUI()
+void PEER_NGA_Records::setupUI(GeneralInformationWidget* generalInfoWidget)
 {
     auto layout = new QGridLayout(this);
 
@@ -37,32 +42,31 @@ void PEER_NGA_Records::setupUI()
     auto targetSpectrumGroup = new QGroupBox("Target Spectrum");
 
     auto targetSpectrumLayout = new QGridLayout(targetSpectrumGroup);
+    targetSpectrumLayout->setColumnMinimumWidth(1, 100);
+    targetSpectrumLayout->setColumnMinimumWidth(2, 30);
+
     targetSpectrumLayout->addWidget(new QLabel("Type"), 0, 0);
     spectrumTypeComboBox = new QComboBox();
-    spectrumTypeComboBox->addItem("ASCE 7-10");
+
     targetSpectrumLayout->addWidget(spectrumTypeComboBox, 0, 1);
+    spectrumTypeComboBox->addItem("Design Spectrum (ASCE 7-10)");
+    spectrumTypeComboBox->addItem("User Specified");
+    spectrumTypeComboBox->addItem("Design Spectrum (USGS Web Service)");
+    spectrumTypeComboBox->addItem("Uniform Hazard Spectrum (USGS NSHMP)");
 
-    targetSpectrumLayout->addWidget(new QLabel("S<sub>DS</sub>"), 1, 0);
-    sdsEditBox = new QLineEdit("1.0");
-    sdsEditBox->setValidator(positiveDoubleValidator);
-    targetSpectrumLayout->addWidget(sdsEditBox, 1, 1);
-    targetSpectrumLayout->addWidget(new QLabel("g"), 1, 2);
-
-    targetSpectrumLayout->addWidget(new QLabel("S<sub>D1</sub>"), 2, 0);
-    sd1EditBox = new QLineEdit("0.75");
-    sd1EditBox->setValidator(positiveDoubleValidator);
-    targetSpectrumLayout->addWidget(sd1EditBox, 2, 1);
-    targetSpectrumLayout->addWidget(new QLabel("g"), 2, 2);
-
-    targetSpectrumLayout->addWidget(new QLabel("T<sub>L</sub>"), 3, 0);
-    tlEditBox = new QLineEdit("12.0");
-    tlEditBox->setValidator(positiveDoubleValidator);
-    targetSpectrumLayout->addWidget(tlEditBox, 3, 1);
-    targetSpectrumLayout->addWidget(new QLabel("sec."), 3, 2);
-    targetSpectrumLayout->setRowStretch(targetSpectrumLayout->rowCount(), 1);
+    targetSpectrumDetails = new QStackedWidget(this);
+    targetSpectrumLayout->addWidget(targetSpectrumDetails, 1, 0, 1, 3);
+    auto asce710Target = new ASCE710Target(this);
+    targetSpectrumDetails->addWidget(asce710Target);
+    auto userSpectrumTarget = new UserSpectrumWidget(this);
+    targetSpectrumDetails->addWidget(userSpectrumTarget);
+    auto usgsSpectrumTarget = new USGSTargetWidget(generalInfoWidget, this);
+    targetSpectrumDetails->addWidget(usgsSpectrumTarget);
+    auto nshmpTarget = new NSHMPTarget(generalInfoWidget, this);
+    targetSpectrumDetails->addWidget(nshmpTarget);
 
     auto recordSelectionGroup = new QGroupBox("Record Selection");
-    auto recordSelectionLayout = new QGridLayout(recordSelectionGroup);
+    recordSelectionLayout = new QGridLayout(recordSelectionGroup);
     recordSelectionLayout->addWidget(new QLabel("Number of Records"), 0, 0);
     nRecordsEditBox = new QLineEdit("16");
     nRecordsEditBox->setValidator(positiveIntegerValidator);
@@ -71,7 +75,7 @@ void PEER_NGA_Records::setupUI()
     //Magnitude Range
     magnitudeCheckBox = new QCheckBox("Magnitude");
     recordSelectionLayout->addWidget(magnitudeCheckBox, 1, 0);
-    magnitudeMin = new QLineEdit("0.0");
+    magnitudeMin = new QLineEdit("5.0");
     magnitudeMin->setEnabled(false);
     magnitudeMin->setValidator(positiveDoubleValidator);
     recordSelectionLayout->addWidget(magnitudeMin, 1, 1);
@@ -94,7 +98,7 @@ void PEER_NGA_Records::setupUI()
 
     vs30CheckBox = new QCheckBox("Vs30");
     recordSelectionLayout->addWidget(vs30CheckBox, 3, 0);
-    vs30Min = new QLineEdit("150");
+    vs30Min = new QLineEdit("150.0");
     vs30Min->setEnabled(false);
     vs30Min->setValidator(positiveDoubleValidator);
     recordSelectionLayout->addWidget(vs30Min, 3, 1);
@@ -104,10 +108,54 @@ void PEER_NGA_Records::setupUI()
     recordSelectionLayout->addWidget(vs30Max, 3, 2);
     recordSelectionLayout->addWidget(new QLabel("m/s"), 3, 3);
 
-    selectRecordsButton = new QPushButton("Select Records");
-    recordSelectionLayout->addWidget(selectRecordsButton, 4, 0, 1, 4);
+    targetSpectrumGroup->setMaximumHeight(200);
+    recordSelectionGroup->setMaximumHeight(200);
 
-    recordSelectionLayout->setRowStretch(recordSelectionLayout->rowCount(), 1);
+    auto scalingGroup = new QGroupBox("Scaling");
+    auto scalingLayout = new QGridLayout(scalingGroup);
+
+    scalingComboBox = new QComboBox();
+    scalingComboBox->addItem("No Scaling");
+    scalingComboBox->addItem("Minimize MSE");
+    scalingComboBox->addItem("Single Period");
+
+    scalingLayout->addWidget(new QLabel("Scaling Method:"), 0, 0);
+    scalingLayout->addWidget(scalingComboBox, 0, 1);
+
+    scalingPeriodLabel1 = new QLabel("Scaling Period (sec):");
+    scalingPeriodLineEdit = new QLineEdit("1.0");
+    scalingPeriodLabel2  = new QLabel("(Ti)");
+    scalingLayout->addWidget(scalingPeriodLabel1, 0, 2);
+    scalingLayout->addWidget(scalingPeriodLineEdit, 0, 3);
+    scalingLayout->addWidget(scalingPeriodLabel2, 0, 4);
+
+    weightFunctionHeadingLabel = new QLabel("Weight Function");
+    weightFunctionHeadingLabel->setStyleSheet("font-weight: bold;");
+
+    weightFunctionLabel = new QLabel("Weight function is used in both search and scaling when computing MSE. Values can be updated for rescaling. Intermediate points are interpolated with W = fxn(log(T))");
+    weightFunctionLabel->setWordWrap(true);
+
+    periodPointsLabel1 = new QLabel("Period Points :");
+    periodPointsLineEdit = new QLineEdit("0.01,0.05,0.1,0.5,1,5,10.0");
+    periodPointsLabel2 = new QLabel("(T1,T2, ... Tn)");
+
+    weightsLabel1 = new QLabel("Weights :");
+    weightsLineEdit = new QLineEdit("1.0,1.0,1.0,1.0,1.0,1.0,1.0");
+    weightsLabel2 = new QLabel("(W1,W2, ... Wn)");
+
+    scalingLayout->addWidget(weightFunctionHeadingLabel, 1, 0);
+    scalingLayout->addWidget(weightFunctionLabel, 1, 3, 4, 2);
+    scalingLayout->addWidget(periodPointsLabel1, 2, 0);
+    scalingLayout->addWidget(periodPointsLineEdit, 2, 1);
+    scalingLayout->addWidget(periodPointsLabel2, 2, 2);
+    scalingLayout->addWidget(weightsLabel1, 3, 0);
+    scalingLayout->addWidget(weightsLineEdit, 3, 1);
+    scalingLayout->addWidget(weightsLabel2, 3, 2);
+
+    selectRecordsButton = new QPushButton("Select Records");
+    scalingLayout->addWidget(selectRecordsButton, 4, 0, 1, 2);
+
+    this->onScalingComboBoxChanged(0);
 
     //Records Table
     recordsTable = new QTableWidget();
@@ -117,12 +165,22 @@ void PEER_NGA_Records::setupUI()
     auto groundMotionsGroup = new QGroupBox("Ground Motions");
     auto groundMotionsLayout = new QGridLayout(groundMotionsGroup);
     groundMotionsComponentsBox = new QComboBox();
+    /*
     groundMotionsComponentsBox->addItem("One (Horizontal)", GroundMotionComponents::One);
     groundMotionsComponentsBox->addItem("Two (Horizontal)", GroundMotionComponents::Two);
     groundMotionsComponentsBox->addItem("Three (Horizontal & Vertical)", GroundMotionComponents::Three);
+    */
+    groundMotionsComponentsBox->addItem("SRSS", GroundMotionComponents::Two);
+    groundMotionsComponentsBox->addItem("RotD100", GroundMotionComponents::Two);
+    groundMotionsComponentsBox->addItem("RotD50", GroundMotionComponents::Two);
+    groundMotionsComponentsBox->addItem("GeoMean", GroundMotionComponents::Two);
+    groundMotionsComponentsBox->addItem("H1", GroundMotionComponents::One);
+    groundMotionsComponentsBox->addItem("H2", GroundMotionComponents::One);
+    groundMotionsComponentsBox->addItem("V", GroundMotionComponents::Three);
+
     groundMotionsLayout->addWidget(new QLabel("Acceleration Components"), 0, 0);
     groundMotionsLayout->addWidget(groundMotionsComponentsBox, 0, 1);
-    recordsTable->setMinimumHeight(400);
+    recordsTable->setMinimumHeight(200);
     groundMotionsLayout->addWidget(recordsTable, 1, 0, 1, 2);
     groundMotionsLayout->setRowStretch(1, 1);
     progressBar = new QProgressBar();
@@ -134,19 +192,20 @@ void PEER_NGA_Records::setupUI()
 
     layout->addWidget(targetSpectrumGroup, 0, 0);
     layout->addWidget(recordSelectionGroup, 0, 1);
-    layout->addWidget(groundMotionsGroup, 1, 0, 1, 2);
+    layout->addWidget(scalingGroup, 1, 0, 1, 2);
+    layout->addWidget(groundMotionsGroup, 2, 0, 1, 2);
 
     auto peerCitation = new QLabel("This tool uses PEER NGA West 2 Ground Motions Database. "
-    "Users should cite the database as follows: PEER 2013/03 – PEER NGA-West2 Database, "
-    "Timothy D. Ancheta, Robert B. Darragh, Jonathan P. Stewart, Emel Seyhan, Walter J. Silva, "
-    "Brian S.J. Chiou, Katie E. Wooddell, Robert W. Graves, Albert R. Kottke, "
-    "David M. Boore, Tadahiro Kishida, and Jennifer L. Donahue.");
+                                   "Users should cite the database as follows: PEER 2013/03 – PEER NGA-West2 Database, "
+                                   "Timothy D. Ancheta, Robert B. Darragh, Jonathan P. Stewart, Emel Seyhan, Walter J. Silva, "
+                                   "Brian S.J. Chiou, Katie E. Wooddell, Robert W. Graves, Albert R. Kottke, "
+                                   "David M. Boore, Tadahiro Kishida, and Jennifer L. Donahue.");
 
     peerCitation->setWordWrap(true);
-    layout->addWidget(peerCitation, 2, 0, 1, 3);
+    layout->addWidget(peerCitation, 3, 0, 1, 3);
 
     //layout->addWidget(thePlottingWindow, 0,3,2,1);
-    layout->addWidget(&recordSelectionPlot, 0,3,2,1);
+    layout->addWidget(&recordSelectionPlot, 0,3,4,1);
 
     recordSelectionPlot.setHidden(true);
 
@@ -159,6 +218,7 @@ void PEER_NGA_Records::setupConnections()
 {
     connect(selectRecordsButton, &QPushButton::clicked, this, [this]()
     {
+
         if(!peerClient.loggedIn())
         {
             PeerLoginDialog loginDialog(&peerClient, this);
@@ -228,6 +288,22 @@ void PEER_NGA_Records::setupConnections()
 
         recordSelectionPlot.highlightSpectra(selectedRows);
     });
+
+    connect(spectrumTypeComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index){
+        targetSpectrumDetails->setCurrentIndex(index);
+
+        return;
+    });
+
+
+    for(int i = 0; i < targetSpectrumDetails->count(); i++)
+    {
+        auto targetWidget = reinterpret_cast<AbstractTargetWidget*>(targetSpectrumDetails->widget(i));
+        connect(targetWidget, &AbstractTargetWidget::statusUpdated, this, &PEER_NGA_Records::updateStatus);
+    }
+
+
+    connect(scalingComboBox, SIGNAL(currentIndexChanged(int)), this, SLOT(onScalingComboBoxChanged(int)));
 }
 
 void PEER_NGA_Records::processPeerRecords(QDir resultFolder)
@@ -303,9 +379,8 @@ void PEER_NGA_Records::plotSpectra()
 void PEER_NGA_Records::updateStatus(QString status)
 {
     emit sendStatusMessage(status);
-    return;
 
-    // keeping old code for now ..
+    // Showing status in status bar
     if(this->parent())
     {
         auto topWidget = this->parent();
@@ -315,10 +390,24 @@ void PEER_NGA_Records::updateStatus(QString status)
         if (statusBar)
             statusBar->showMessage(status, 5000);
     }
+    return;
 }
 
 void PEER_NGA_Records::selectRecords()
 {
+
+    // Set the search scaling parameters
+    // 0 is not scaling
+    // 1 is minimize MSE
+    // 2 is single period scaling
+    auto scaleFlag = scalingComboBox->currentIndex();
+    auto periodPoints = periodPointsLineEdit->text();
+    auto weightPoints = weightsLineEdit->text();
+    auto scalingPeriod = scalingPeriodLineEdit->text();
+    peerClient.setScalingParameters(scaleFlag,periodPoints,weightPoints,scalingPeriod);
+
+    GoogleAnalytics::Report("RecordSelection", "PEER");
+
     QVariant magnitudeRange;
     if(magnitudeCheckBox->checkState() == Qt::Checked)
         magnitudeRange.setValue(qMakePair(magnitudeMin->text().toDouble(), magnitudeMax->text().toDouble()));
@@ -331,10 +420,38 @@ void PEER_NGA_Records::selectRecords()
     if(vs30CheckBox->checkState() == Qt::Checked)
         vs30Range.setValue(qMakePair(vs30Min->text().toDouble(), vs30Max->text().toDouble()));
 
-    peerClient.selectRecords(sdsEditBox->text().toDouble(),
-                             sd1EditBox->text().toDouble(),
-                             tlEditBox->text().toDouble(),
-                             nRecordsEditBox->text().toInt(), magnitudeRange, distanceRange, vs30Range);
+    if(targetSpectrumDetails->currentIndex() == 0)
+    {
+        auto asce710widget = reinterpret_cast<ASCE710Target*>(targetSpectrumDetails->currentWidget());
+        peerClient.selectRecords(asce710widget->sds(),
+                                 asce710widget->sd1(),
+                                 asce710widget->tl(),
+                                 nRecordsEditBox->text().toInt(),
+				 magnitudeRange,
+				 distanceRange,
+                 vs30Range,groundMotionsComponentsBox->currentIndex()+1);
+    }
+    else
+    {
+        auto userTargetWidget = reinterpret_cast<AbstractTargetWidget*>(targetSpectrumDetails->currentWidget());
+
+        progressBar->setHidden("False");
+        selectRecordsButton->setEnabled(false);
+        selectRecordsButton->setDown(true);
+
+        updateStatus("Retrieving Target Spectrum...");
+        auto spectrum = userTargetWidget->spectrum();
+
+
+        if (spectrum.size() > 0)
+            peerClient.selectRecords(userTargetWidget->spectrum(), nRecordsEditBox->text().toInt(), magnitudeRange, distanceRange, vs30Range);
+        else
+        {
+            progressBar->setHidden("True");
+            selectRecordsButton->setEnabled(true);
+            selectRecordsButton->setDown(false);
+        }
+    }
 }
 
 void PEER_NGA_Records::addTableItem(int row, int column, QString value)
@@ -474,10 +591,9 @@ bool PEER_NGA_Records::outputToJSON(QJsonObject &jsonObject)
 
     jsonObject["Events"] = eventsArray;
 
-    jsonObject["TargetSpectrum"] = spectrumTypeComboBox->currentText();
-    jsonObject["Sds"] = sdsEditBox->text();
-    jsonObject["Sd1"] = sd1EditBox->text();
-    jsonObject["Tl"] = tlEditBox->text();
+    auto spectrumJson = dynamic_cast<AbstractJsonSerializable*>(targetSpectrumDetails->currentWidget())->serialize();
+    spectrumJson["SpectrumType"] = spectrumTypeComboBox->currentText();
+    jsonObject["TargetSpectrum"] = spectrumJson;
 
     jsonObject["components"] = groundMotionsComponentsBox->currentText();
 
@@ -500,10 +616,12 @@ bool PEER_NGA_Records::outputToJSON(QJsonObject &jsonObject)
 
 bool PEER_NGA_Records::inputFromJSON(QJsonObject &jsonObject)
 {
-    spectrumTypeComboBox->setCurrentText(jsonObject["TargetSpectrum"].toString());
-    sdsEditBox->setText(jsonObject["Sds"].toString());
-    sd1EditBox->setText(jsonObject["Sd1"].toString());
-    tlEditBox->setText(jsonObject["Tl"].toString());
+    if(jsonObject["TargetSpectrum"].isObject() && jsonObject["TargetSpectrum"].toObject().keys().contains("SpectrumType"))
+    {
+        auto targetSpectrumJson = jsonObject["TargetSpectrum"].toObject();
+        spectrumTypeComboBox->setCurrentText(jsonObject["TargetSpectrum"].toObject()["SpectrumType"].toString());
+        dynamic_cast<AbstractJsonSerializable*>(targetSpectrumDetails->currentWidget())->deserialize(jsonObject["TargetSpectrum"].toObject());
+    }
 
     groundMotionsComponentsBox->setCurrentText(jsonObject["components"].toString());
 
@@ -579,3 +697,60 @@ bool PEER_NGA_Records::copyFiles(QString &destDir)
 
     return true;
 }
+
+void PEER_NGA_Records::onScalingComboBoxChanged(const int index)
+{
+    if(index == 0)
+    {
+        weightFunctionHeadingLabel->hide();
+        weightFunctionLabel->hide();
+        periodPointsLabel1->hide();
+        periodPointsLineEdit->hide();
+        periodPointsLabel2->hide();
+        weightsLabel1->hide();
+        weightsLineEdit->hide();
+        weightsLabel2->hide();
+        scalingPeriodLabel1->hide();
+        scalingPeriodLineEdit->hide();
+        scalingPeriodLabel2->hide();
+
+        return;
+    }
+    else  // Show minimize MSE and scaling inputs
+    {
+        weightFunctionHeadingLabel->show();
+        weightFunctionLabel->show();
+        periodPointsLabel1->show();
+        periodPointsLineEdit->show();
+        periodPointsLabel2->show();
+        weightsLabel1->show();
+        weightsLineEdit->show();
+        weightsLabel2->show();
+
+        if(index == 2) // Show single period inputs
+        {
+            scalingPeriodLabel1->show();
+            scalingPeriodLineEdit->show();
+            scalingPeriodLabel2->show();
+        }
+        else
+        {
+            scalingPeriodLabel1->hide();
+            scalingPeriodLineEdit->hide();
+            scalingPeriodLabel2->hide();
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+

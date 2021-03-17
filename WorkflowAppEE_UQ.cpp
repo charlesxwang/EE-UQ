@@ -108,7 +108,7 @@ WorkflowAppEE_UQ::WorkflowAppEE_UQ(RemoteService *theService, QWidget *parent)
     theRVs = new RandomVariablesContainer();
     theGI = GeneralInformationWidget::getInstance();
     theSIM = new SIM_Selection(theRVs);
-    theEventSelection = new EarthquakeEventSelection(theRVs);
+    theEventSelection = new EarthquakeEventSelection(theRVs, theGI);
     theAnalysisSelection = new FEM_Selection(theRVs);
     theUQ_Selection = new UQ_EngineSelection(theRVs);
     theEDP_Selection = new EDP_EarthquakeSelection(theRVs);
@@ -116,8 +116,11 @@ WorkflowAppEE_UQ::WorkflowAppEE_UQ(RemoteService *theService, QWidget *parent)
     //theResults = new DakotaResultsSampling(theRVs);
     theResults = theUQ_Selection->getResults();
 
-    localApp = new LocalApplication("EE-UQ workflow.py");
-    remoteApp = new RemoteApplication("EE-UQ workflow.py", theService);
+    localApp = new LocalApplication("femUQ.py");
+    remoteApp = new RemoteApplication("femUQ.py", theService);
+
+    //    localApp = new LocalApplication("EE-UQ workflow.py");
+    //   remoteApp = new RemoteApplication("EE-UQ workflow.py", theService);
 
     // localApp = new LocalApplication("EE-UQ.py");
     // remoteApp = new RemoteApplication("EE-UQ.py", theService);
@@ -169,7 +172,12 @@ WorkflowAppEE_UQ::WorkflowAppEE_UQ(RemoteService *theService, QWidget *parent)
     connect(theJobManager,SIGNAL(loadFile(QString)), this, SLOT(loadFile(QString)));
 
     connect(remoteApp,SIGNAL(successfullJobStart()), theRunWidget, SLOT(hide()));
-       
+
+    connect(localApp,SIGNAL(runComplete()), this, SLOT(runComplete()));
+    connect(remoteApp,SIGNAL(successfullJobStart()), this, SLOT(runComplete()));
+    connect(theService, SIGNAL(closeDialog()), this, SLOT(runComplete()));
+    connect(theJobManager, SIGNAL(closeDialog()), this, SLOT(runComplete()));
+
     //connect(theRunLocalWidget, SIGNAL(runButtonPressed(QString, QString)), this, SLOT(runLocal(QString, QString)));
 
 
@@ -180,6 +188,8 @@ WorkflowAppEE_UQ::WorkflowAppEE_UQ(RemoteService *theService, QWidget *parent)
 
     QHBoxLayout *horizontalLayout = new QHBoxLayout();
     this->setLayout(horizontalLayout);
+    this->setContentsMargins(0,5,0,5);
+    horizontalLayout->setMargin(0);
 
     //
     // create the component selection & add the components to it
@@ -212,7 +222,7 @@ WorkflowAppEE_UQ::WorkflowAppEE_UQ(RemoteService *theService, QWidget *parent)
     // set the defults in the General Info
     //
 
-    theGI->setDefaultProperties(1,144,360,360,37.8716,-127.2717);
+    theGI->setDefaultProperties(1,144,360,360,37.8715,-122.2730);
 }
 
 WorkflowAppEE_UQ::~WorkflowAppEE_UQ()
@@ -221,8 +231,8 @@ WorkflowAppEE_UQ::~WorkflowAppEE_UQ()
     // as some classes in destructur remove RV from the RVCOntainer
     // which may already have been destructed .. so removing so no destructor called
 
-    QWidget *newUQ = new QWidget();
-    theComponentSelection->swapComponent("RV",newUQ);
+  //    QWidget *newUQ = new QWidget();
+  //    theComponentSelection->swapComponent("RV",newUQ);
 }
 
 void WorkflowAppEE_UQ::replyFinished(QNetworkReply *pReply)
@@ -560,6 +570,8 @@ WorkflowAppEE_UQ::setUpForApplicationRun(QString &workingDir, QString &subDir) {
 void
 WorkflowAppEE_UQ::loadFile(const QString fileName){
 
+    errorMessage("");
+
     //
     // open file
     //
@@ -594,3 +606,4 @@ int
 WorkflowAppEE_UQ::getMaxNumParallelTasks() {
     return theUQ_Selection->getNumParallelTasks();
 }
+

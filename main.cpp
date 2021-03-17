@@ -20,7 +20,7 @@
 #include <QOpenGLWidget>
 #include <QStandardPaths>
 #include <QDir>
-
+#include <QStatusBar>
 
 static QString logFilePath;
 static bool logToFile = false;
@@ -58,13 +58,25 @@ void customMessageOutput(QtMsgType type, const QMessageLogContext &context, cons
 
 int main(int argc, char *argv[])
 {
+
+#ifdef Q_OS_WIN
+    QApplication::setAttribute(Qt::AA_UseOpenGLES);
+#else
+    QApplication::setAttribute(Qt::AA_UseDesktopOpenGL);
+#endif
+    
+
     //Setting Core Application Name, Organization, Version and Google Analytics Tracking Id
     QCoreApplication::setApplicationName("EE-UQ");
     QCoreApplication::setOrganizationName("SimCenter");
-    QCoreApplication::setApplicationVersion("2.0.1");
-    //    GoogleAnalytics::SetTrackingId("UA-126303135-1");
+    QCoreApplication::setApplicationVersion("2.2.2");
+    // GoogleAnalytics::SetTrackingId("UA-126303135-1");
     GoogleAnalytics::StartSession();
     GoogleAnalytics::ReportStart();
+
+    //Init resources from static libraries (e.g. SimCenterCommonQt or s3hark)
+    Q_INIT_RESOURCE(images1);
+    Q_INIT_RESOURCE(resources);
 
     //
     // set up logging of output messages for user debugging
@@ -76,9 +88,9 @@ int main(int argc, char *argv[])
     // make sure tool dir exists in Documentss folder
     QDir dirWork(logFilePath);
     if (!dirWork.exists())
-      if (!dirWork.mkpath(logFilePath)) {
-	qDebug() << QString("Could not create Working Dir: ") << logFilePath;
-      }
+        if (!dirWork.mkpath(logFilePath)) {
+            qDebug() << QString("Could not create Working Dir: ") << logFilePath;
+        }
 
     // full path to debug.log file
     logFilePath = logFilePath + QDir::separator() + QString("debug.log");
@@ -112,7 +124,7 @@ int main(int argc, char *argv[])
     //
 
     QApplication a(argc, argv);
-
+    
     //
     // create a remote interface
     //
@@ -131,7 +143,7 @@ int main(int argc, char *argv[])
     WorkflowAppWidget *theInputApp = new WorkflowAppEE_UQ(theRemoteService);
     MainWindowWorkflowApp w(QString("EE-UQ: Response of Building to Earthquake"), theInputApp, theRemoteService);
 
-
+    /*
     QString textAboutEE_UQ = "\
             <p> \
             This is the Earthquake Engineering with Uncertainty Quantification (EE-UQ) application.\
@@ -154,20 +166,26 @@ int main(int argc, char *argv[])
         This will ensure researchers are not limited to using the default applications we provide and will be enthused to provide\
         their own applications for others to use.\
         <p>\
-        This is Version 2.0.1 of the tool and as such is limited in scope. Researchers are encouraged to comment on what additional \
+        This is Version 2.2.2 of the tool and as such is limited in scope. Researchers are encouraged to comment on what additional \
         features and applications they would like to see in this application. If you want it, chances are many of your colleagues \
         also would benefit from it.\
         <p>";
 
         w.setAbout(textAboutEE_UQ);
+    */
 
-    QString version("Version 2.0.1");
+
+    QString aboutTitle = "About the SimCenter EE-UQ Application"; // this is the title displayed in the on About dialog
+    QString aboutSource = ":/resources/docs/textAboutEEUQ.html";  // this is an HTML file stored under resources
+    w.setAbout(aboutTitle, aboutSource);
+
+    QString version("Version 2.2.2");
     w.setVersion(version);
 
     QString citeText("Frank McKenna, Wael Elhaddad, Michael Gardner, Adam Zsarnoczay, & Charles Wang. (2019, October 8). NHERI-SimCenter/EE-UQ: Version 2.0.0 (Version v2.0.0). Zenodo. http://doi.org/10.5281/zenodo.3475642");
     w.setCite(citeText);
 
-    QString manualURL("https://www.designsafe-ci.org/data/browser/public/designsafe.storage.community//SimCenter/Software/EE_UQ");
+    QString manualURL("https://nheri-simcenter.github.io/EE-UQ-Documentation/");
     w.setDocumentationURL(manualURL);
 
     QString messageBoardURL("https://simcenter-messageboard.designsafe-ci.org/smf/index.php?board=6.0");
@@ -190,6 +208,7 @@ int main(int argc, char *argv[])
     //
 
     w.show();
+    w.statusBar()->showMessage("Ready", 5000);
 
 #ifdef Q_OS_WIN
     QFile file(":/styleCommon/stylesheetWIN.qss");

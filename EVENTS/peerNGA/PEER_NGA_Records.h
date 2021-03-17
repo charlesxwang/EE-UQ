@@ -10,12 +10,18 @@
 #include <QFile>
 #include <QTableWidget>
 #include <QTemporaryDir>
+#include <QPointer>
 #include <QVector>
 #include <QCheckBox>
 #include "RecordSelectionPlot.h"
 #include <QProgressBar>
+#include <QStackedWidget>
+#include <GeneralInformationWidget.h>
+
 
 class QComboBox;
+class QLabel;
+class QGroupBox;
 
 struct PeerScaledRecord
 {
@@ -38,7 +44,7 @@ class PEER_NGA_Records : public SimCenterAppWidget
 
 
 public:
-    explicit PEER_NGA_Records(QWidget *parent = nullptr);
+    explicit PEER_NGA_Records(GeneralInformationWidget* generalInfoWidget, QWidget *parent = nullptr);
 
     bool outputToJSON(QJsonObject &jsonObject) override;
     bool inputFromJSON(QJsonObject &jsonObject) override;
@@ -54,18 +60,19 @@ signals:
 
 public slots:
 
+    void onScalingComboBoxChanged(const int index);
+
 private:
     PeerNgaWest2Client peerClient;
     QPushButton* selectRecordsButton;
-    QLineEdit* sdsEditBox;
-    QLineEdit* sd1EditBox;
-    QLineEdit* tlEditBox;
     QLineEdit* nRecordsEditBox;
     QTableWidget* recordsTable;
     QComboBox* groundMotionsComponentsBox;
     RecordSelectionPlot recordSelectionPlot;
     QProgressBar* progressBar;
     QComboBox* spectrumTypeComboBox;
+    QStackedWidget* targetSpectrumDetails;
+    QGridLayout* recordSelectionLayout;
 
     //Magnitude Range
     QCheckBox* magnitudeCheckBox;
@@ -83,6 +90,22 @@ private:
     QLineEdit* vs30Max;
     QTemporaryDir groundMotionsFolder;
 
+    //Scaling
+    QComboBox* scalingComboBox;
+    QLabel* scalingPeriodLabel1;
+    QLineEdit* scalingPeriodLineEdit;
+    QLabel* scalingPeriodLabel2;
+
+    //Weight function inputs
+    QPointer<QLabel> weightFunctionHeadingLabel;
+    QPointer<QLabel> weightFunctionLabel;
+    QPointer<QLabel> periodPointsLabel1;
+    QPointer<QLineEdit> periodPointsLineEdit;
+    QPointer<QLabel> periodPointsLabel2;
+    QPointer<QLabel> weightsLabel1;
+    QPointer<QLineEdit> weightsLineEdit;
+    QPointer<QLabel> weightsLabel2;
+
     //Record Selection Members
     QList<PeerScaledRecord> currentRecords;
     QVector<QVector<double>> scaledSelectedSpectra;
@@ -92,7 +115,7 @@ private:
     QVector<double> meanMinusSigmaSpectrum;
     QVector<double> targetSpectrum;
 
-    void setupUI();
+    void setupUI(GeneralInformationWidget* generalInfoWidget);
     void setupConnections();
     void processPeerRecords(QDir resultFolder);
     QList<PeerScaledRecord> parseSearchResults(QString searchResultsFilePath);

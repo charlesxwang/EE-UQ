@@ -43,6 +43,8 @@ UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
 
 #include <QGroupBox>
 #include <QVector>
+#include <GeneralInformationWidget.h>
+
 class QComboBox;
 class QStackedWidget;
 class UserDefinedApplication;
@@ -54,7 +56,7 @@ class EarthquakeEventSelection : public  SimCenterAppWidget
 {
     Q_OBJECT
 public:
-    explicit EarthquakeEventSelection(RandomVariablesContainer *, QWidget *parent = 0);
+    explicit EarthquakeEventSelection(RandomVariablesContainer *, GeneralInformationWidget* generalInfoWidget, QWidget *parent = 0);
     ~EarthquakeEventSelection();
 
     bool outputToJSON(QJsonObject &rvObject);
@@ -73,10 +75,10 @@ private:
    QStackedWidget *theStackedWidget;
    SimCenterAppWidget *theCurrentEvent;
 
-   SimCenterAppWidget *theSHA_MotionWidget;
+   //   SimCenterAppWidget *theSHA_MotionWidget;
    SimCenterAppWidget *theExistingEvents;
    SimCenterAppWidget *theExistingPeerEvents;
-   SimCenterAppWidget *theUserDefinedApplication;
+   //SimCenterAppWidget *theUserDefinedApplication;
    SimCenterAppWidget *theStochasticMotionWidget;
    SimCenterAppWidget *theRockOutcrop;
    SimCenterAppWidget* peerNgaRecords;
